@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pokemon-chatgpt-mcp"
+version = "1.0.0"
+description = "The 2MinutesPy Pokemon MCP demo, adapted for ChatGPT remote MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx[socks]>=0.27,<1",
+    "mcp[cli]>=1.13,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+include = ["server.py"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
