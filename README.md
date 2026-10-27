@@ -1,122 +1,126 @@
-# Pokémon MCP Server for ChatGPT
+# Pokémon MCP — Explainable Team Builder
 
-This project reproduces the MCP server from 2MinutesPy's **“Building an MCP
-server in 2 minutes”** video. It exposes the same three tools:
+**A Python Model Context Protocol (MCP) server that lets ChatGPT retrieve live Pokémon data, explore team compositions, and explain type-based weaknesses.**
 
-- `get_pokemon_info(name)` — fetch live Pokémon types, abilities, and stats
-- `create_tournament_squad()` — build the video's six-Pokémon squad
-- `list_popular_pokemon()` — list the video's popular tournament picks
+> **Project status:** Educational prototype with working data retrieval and explainable team suggestions. It is **not** a competitive legality checker or battle simulator. Suggested teams are not guaranteed legal or optimal for a specific metagame.
 
-The only important change is the connection method. The video uses local
-`stdio`; ChatGPT needs a remotely reachable MCP endpoint. This project therefore
-defaults to **Streamable HTTP** at `/mcp`.
+## The problem
 
-No OpenAI API key or PokéAPI key is required.
+Pokémon information is scattered across reference websites, and building a balanced six-member team requires comparing types, roles and weaknesses. This project connects an AI assistant to a real data source and adds deterministic analysis tools so users can ask questions in natural language.
 
-## What is happening, in plain English?
+## What it does
 
-1. You ask ChatGPT a Pokémon question.
-2. ChatGPT chooses one of this server's three tools.
-3. The server calls the public PokéAPI when live data is needed.
-4. The server sends the Pokémon information back to ChatGPT.
+| Capability | How it works | Status |
+| --- | --- | --- |
+| Live Pokémon stats, types and abilities | Fetches data from PokéAPI | Implemented |
+| Move discovery | Lists recorded moves with a legality disclaimer | Implemented |
+| Team suggestions | Deterministic role and type heuristic over a curated roster | Implemented (demo) |
+| Team weakness analysis | Calculates type matchups and shared weaknesses | Implemented |
+| Original six-Pokémon demo | Preserves the tutorial tools for backward compatibility | Implemented |
+| Official format legality and Showdown exports | Requires a maintained rules source and set validator | Future work |
+| Battle simulations or real win rates | Requires a full battle engine and evaluation methodology | Future work |
 
-## Run it locally
+## Quick demonstration
 
-You need Python 3.11 or newer.
+```text
+User: Use Pokémon MCP to show Greninja's stats.
+Assistant: [calls get_pokemon_info] Greninja is Water/Dark ...
+
+User: Suggest a balanced example team around Greninja.
+Assistant: [calls suggest_example_team] Here is a six-member example,
+           each role, and an explanation of shared type weaknesses.
+
+User: Is this guaranteed legal in Gen 9 OU?
+Assistant: No. This version does not validate tier or moveset legality.
+```
+
+For an offline demo that requires **no account, API key or network**:
+
+```bash
+python -m scripts.demo
+```
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[ChatGPT or MCP client] -->|MCP tools| B[Python FastMCP server]
+    B --> C[PokéAPI adapter]
+    C --> D[Public PokéAPI]
+    B --> E[Team-building heuristic]
+    B --> F[Type matchup analyzer]
+    E --> F
+```
+
+The app separates transport (`pokemon_mcp/app.py`), external API access (`pokemon_mcp/pokeapi.py`), type calculations (`pokemon_mcp/type_chart.py`), and team-building logic (`pokemon_mcp/team_builder.py`). This makes the rules testable without ChatGPT or a live API. See [architecture notes](docs/ARCHITECTURE.md).
+
+## Run locally
+
+Requirements: Python **3.11+**.
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
+source .venv/bin/activate             # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -e '.[dev]'
+python -m pytest -q
 python server.py
 ```
 
-The MCP URL is:
+The Streamable HTTP MCP endpoint is `http://localhost:8000/mcp`; the health route is `http://localhost:8000/health`. Use the `/mcp` endpoint with an MCP-compatible client. A localhost URL is not accessible to cloud-hosted ChatGPT.
+
+To use local STDIO transport, run `MCP_TRANSPORT=stdio python server.py`.
+
+## Deploy on Render
+
+This repo retains the original `render.yaml`, service name, `/health` route, `/mcp` transport path and Docker entry point. A deploy of the new code should preserve the same public MCP URL when applied to the existing Render service.
+
+1. Deploy from this repository using the included Docker configuration.
+2. Check `https://YOUR-RENDER-URL/health` returns `status: ok`.
+3. Connect an MCP client to `https://YOUR-RENDER-URL/mcp`.
+4. Verify that the client discovers all the tools below.
+
+Free-tier instances may need a cold start. No PokéAPI key or OpenAI API key is required. The server is publicly reachable and currently unauthenticated: **do not extend it to private user data without authentication and access controls.**
+
+## MCP tools
+
+| Tool | Description |
+| --- | --- |
+| `get_pokemon_info(name)` | Live stats, typing, abilities |
+| `get_pokemon_moves(name, limit=30)` | Historically recorded moves; no format legality guarantee |
+| `suggest_example_team(core="greninja", playstyle="balanced")` | Six-member educational team suggestion; curated candidate pool |
+| `list_team_candidates()` | Names and roles accepted by the example builder |
+| `analyze_team(pokemon_names)` | Fetch live typings and analyze 1–6 comma-separated names |
+| `create_tournament_squad()` | Original tutorial's fixed six-member demonstration |
+| `list_popular_pokemon()` | Original tutorial's fixed popularity list |
+
+An `analyze_team` example input:
 
 ```text
-http://localhost:8000/mcp
+Greninja, Corviknight, Garchomp
 ```
 
-ChatGPT cannot call that localhost URL directly. Local running is for testing;
-use the deployment section to give ChatGPT a public HTTPS URL.
+The analysis reports type weaknesses and resistances only. It does not account for Pokémon abilities, items, moves, Tera types, battle format rules, or turn-by-turn gameplay.
 
-Run the automated tests:
+## Code quality and tests
 
-```bash
-pytest
-```
+Run `python -m pytest -q` to run offline unit tests using HTTP mocks. Run `python -m ruff check pokemon_mcp server.py tests scripts` to check style. GitHub Actions runs these checks for each push and pull request. See [validation guide](docs/TESTING.md) for coverage and live checks. Tests do **not** prove that suggested teams win battles or are tournament legal.
 
-Run the live PokéAPI smoke test:
+## Portfolio / interview talking points
 
-```bash
-PYTHONPATH=. python scripts/smoke_test.py
-```
+- **Integration:** Built a remote MCP server and connected an LLM interface to PokéAPI.
+- **Software design:** Separated networking, tool definitions, algorithms and tests into modules.
+- **Algorithms:** Developed explainable team selection using role coverage and overlapping type weaknesses.
+- **Engineering:** Added deterministic tests, mock HTTP responses, CI and deployment documentation.
+- **Tradeoffs:** Explicitly scoped the prototype; avoided fabricating competitive legality or win rates.
 
-## Deploy it for ChatGPT
+See [live demo script](docs/DEMO.md) and [project roadmap](docs/ROADMAP.md).
 
-The included `Dockerfile` works on Render, Railway, Fly.io, Google Cloud Run,
-Azure Container Apps, or another Docker host. The easiest beginner route is:
+## Attribution
 
-1. Create a GitHub repository and upload this project's files.
-2. In Render, choose **New → Blueprint** and select that repository.
-3. Deploy the `render.yaml` blueprint.
-4. Copy the public Render URL and add `/mcp` to the end.
+Started as an adaptation of the 2MinutesPy "Building an MCP server in 2 minutes" demonstration. The original demo's three tool names are preserved for compatibility; the modular architecture, team-analysis utilities, tests, and expanded documentation are project enhancements.
 
-Example:
+- [Original tutorial inspiration](https://github.com/Sachin-crypto/Pokemon-MCP-Server)
+- [PokéAPI](https://pokeapi.co/)
+- [Model Context Protocol](https://modelcontextprotocol.io/)
 
-```text
-https://pokemon-chatgpt-mcp-xxxx.onrender.com/mcp
-```
-
-Free hosts may sleep when unused, so the first tool call can take longer.
-
-## Connect it to ChatGPT
-
-After deployment:
-
-1. Open **ChatGPT → Settings → Security and login**.
-2. Turn on **Developer mode**.
-3. Open **ChatGPT Plugins** and select the plus button.
-4. Create a connection named `Pokemon MCP`.
-5. Enter your complete public URL, including `/mcp`.
-6. Review the three discovered tools and save the connection.
-7. In a new chat, enable `Pokemon MCP` from the tools menu.
-
-If Developer mode or Plugins is not shown, custom MCP connections may not be
-enabled for your current account or workspace yet.
-
-## Prompts to test in ChatGPT
-
-```text
-Use Pokemon MCP to tell me Pikachu's type, abilities, and stats.
-```
-
-```text
-Use Pokemon MCP to list the popular tournament Pokémon.
-```
-
-```text
-Use Pokemon MCP to build me the tournament squad.
-```
-
-## Optional: run like the original video
-
-To use the original local `stdio` transport with an MCP-compatible desktop
-client:
-
-```bash
-MCP_TRANSPORT=stdio python server.py
-```
-
-## Security note
-
-This server contains only read-only Pokémon tools and no private data. Because
-it has no authentication, anyone who knows the deployed URL can call it. Add
-authentication before reusing this pattern for private files, accounts, or
-write actions.
-
-## Sources
-
-- Video source repository: <https://github.com/Sachin-crypto/Pokemon-MCP-Server>
-- PokéAPI: <https://pokeapi.co/>
-- OpenAI remote MCP guide: <https://developers.openai.com/api/docs/mcp>
+This is an unofficial fan developer project and is not affiliated with The Pokémon Company, Nintendo or Game Freak.
